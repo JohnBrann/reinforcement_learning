@@ -217,3 +217,31 @@ pendulum2:
   max_episodes: 3000
   env_make_params:
     g: 9.8
+
+# every 2 timesteps
+lunarlander1:
+  env_id: LunarLander-v2
+  render: False
+  state_dim: 8
+  action_dim: 2
+  action_low: -1
+  action_high: 1
+  replay_memory_size: 100000
+  mini_batch_size: 128
+  discount: 0.99
+  tau: 0.005
+  learning_rate: 0.0003
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_freq: 2
+  model_save_freq: 100
+  total_it: 0
+  max_reward: 300
+  max_timestep: 1600
+  max_episodes: 3000
+  env_make_params:
+    continuous: True
+    gravity: -10.0
+    enable_wind: False
+    wind_power: 15.0
+    turbulence_power: 1.5

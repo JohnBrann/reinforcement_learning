@@ -189,6 +189,7 @@ class Agent():
     def run(self, is_training=True):
 
         best_reward = -np.inf   # Used to track best reward
+        best_average_reward = -np.inf # Used to track best average reward across last 100 episodes
 
         for episode in self.max_episodes:
 
@@ -228,22 +229,28 @@ class Agent():
                 if current_time - self.last_graph_update_time > timedelta(seconds=10):
                     self.save_graph(self.rewards_per_episode)
                     self.last_graph_update_time = current_time
-
+                
                 if (episode + 1) % 100 == 0:
-                    #Save model
-                    self.save(self.RUNS_DIR, f'{self.hyperparameter_set}')
-                    time_now = datetime.now()
                     average_reward = np.mean(self.rewards_per_episode[-100:])
-                    log_message = f"{time_now.strftime(self.DATE_FORMAT)}: Saving Model at Episode: {episode + 1} Average Reward: {average_reward:0.1f}"
+                    time_now = datetime.now()
+                    log_message = f"{time_now.strftime(self.DATE_FORMAT)}: Average Reward over last 100 episodes: {average_reward:0.1f} at episode: {episode + 1}"
                     print(log_message)
                     with open(self.LOG_FILE, 'a') as file:
                         file.write(log_message + '\n')
-
+                    if average_reward > best_average_reward:
+                        best_average_reward = average_reward  # Update the best average reward
+                        # Save model
+                        self.save(self.RUNS_DIR, f'{self.hyperparameter_set}')
+                        log_message = f"{time_now.strftime(self.DATE_FORMAT)}: New Best Average Reward: {best_average_reward:0.1f} at episode: {episode + 1}, saving model..."
+                        print(log_message)
+                        with open(self.LOG_FILE, 'a') as file:
+                            file.write(log_message + '\n')
+        
                 if episode_reward > best_reward and episode > 0:
                     # Print message
+                    best_reward = episode_reward
                     log_message = f"{datetime.now().strftime(self.DATE_FORMAT)}: New Best Reward: {episode_reward:0.1f} ({abs((episode_reward-best_reward)/best_reward)*100:+.1f}%) at episode {episode}, saving model..."
                     print(log_message)
-                    best_reward = episode_reward
             else:
                 log_message = f"{datetime.now().strftime(self.DATE_FORMAT)}: This Episode Reward: {episode_reward:0.1f}"
                 print(log_message)
