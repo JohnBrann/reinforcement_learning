@@ -159,9 +159,8 @@ class Agent():
 
     def select_action(self, state):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
-        # at testing REMOVE STOCHASTICITY
-        action, log_prob = self.actor.sample(state)  # Use the sample method to get action and log probability
-        return action.detach().cpu().numpy().flatten(), log_prob
+        action, log_prob = self.actor.sample(state)
+        return action.item(), log_prob
 
 
     def train(self):
@@ -170,7 +169,7 @@ class Agent():
 
         # Convert to tensors
         states = torch.FloatTensor(states).to(self.device)
-        actions = torch.FloatTensor(actions).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)  # Change this line
         rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
@@ -178,8 +177,8 @@ class Agent():
         # Update the critic networks
         with torch.no_grad():
             next_action, next_log_prob = self.actor.sample(next_states)
-            next_q1, next_q2 = self.critic_target(next_states, next_action)
-            next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob
+            next_q1, next_q2 = self.critic_target(next_states, next_action) 
+            next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob.unsqueeze(1)
             target_q = rewards + (1 - dones) * self.discount * next_v
 
         q1, q2 = self.critic(states, actions)
@@ -190,8 +189,8 @@ class Agent():
 
         # Update the actor network
         action, log_prob = self.actor.sample(states)
-        q1, q2 = self.critic(states, action)
-        actor_loss = (self.alpha * log_prob - torch.min(q1, q2)).mean()
+        q1, q2 = self.critic(states, action)  # Change this line
+        actor_loss = (self.alpha * log_prob.unsqueeze(1) - torch.min(q1, q2)).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
@@ -227,13 +226,10 @@ class Agent():
                 self.load()
 
             while(not terminated and not truncated and not step_count == self.max_timestep):
-               # Action selection
+                # Action selection
                 action, _ = self.select_action(state)  # Sample action from the actor
-                print(action)
-                action = action.item()
-                print(action)
+    
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
-                
                 terminated = step_count == self.max_timestep - 1 or terminated
 
                 if is_training or continue_training:

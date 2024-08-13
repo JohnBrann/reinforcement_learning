@@ -26,25 +26,38 @@ class SAC_Actor(nn.Module):
         probs = F.softmax(logits, dim=-1)  # Convert logits to probabilities
         return probs
 
+    # def sample(self, state):
+    #     probs = self.forward(state)
+    #     dist = torch.distributions.Categorical(probs)
+    #     action = dist.sample()
+    #     action = action.unsqueeze(1)  # Add an additional dimension for the action
+    #     log_prob = dist.log_prob(action.squeeze(1))  # Log probability of the selected action
+    #     return action, log_prob
     def sample(self, state):
         probs = self.forward(state)
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
-        action = action.unsqueeze(1)  # Add an additional dimension for the action
-        log_prob = dist.log_prob(action.squeeze(1))  # Log probability of the selected action
+        log_prob = dist.log_prob(action)
         return action, log_prob
-
 
 
 # Critic Network (Twin Critic Networks)
 class SAC_Critic(nn.Module):
     def __init__(self, state_dim, action_dim, use_gpu, hidden_dim_1=400, hidden_dim_2=300):
         super(SAC_Critic, self).__init__()
-        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim_1)
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+
+        print(f"Critic initialized with state_dim: {state_dim}, action_dim: {action_dim}")
+
+
+        # Q1 architecture
+        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
         self.fc2 = nn.Linear(hidden_dim_1, hidden_dim_2)
         self.fc3 = nn.Linear(hidden_dim_2, 1)
 
-        self.fc4 = nn.Linear(state_dim + action_dim, hidden_dim_1)
+        # Q2 architecture
+        self.fc4 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
         self.fc5 = nn.Linear(hidden_dim_1, hidden_dim_2)
         self.fc6 = nn.Linear(hidden_dim_2, 1)
 
@@ -53,21 +66,34 @@ class SAC_Critic(nn.Module):
         else:
             self.device = 'cpu'
 
-    def forward(self, x, u):
-        print(f"x shape: {x.shape}, u shape: {u.shape}")
-        xu = torch.cat([x, u], 2).to(self.device)
-        q1 = F.relu(self.fc1(xu))
+    def forward(self, state, action):
+        # state is expected to be of shape (batch_size, state_dim)
+        # action is expected to be of shape (batch_size, 1) and contain integers
+
+        # Convert action to one-hot encoding
+        one_hot_action = F.one_hot(action.long().squeeze(-1), num_classes=self.action_dim).float()
+        
+        x = torch.cat([state, one_hot_action], dim=1).to(self.device)
+
+        # Q1 value
+        q1 = F.relu(self.fc1(x))
         q1 = F.relu(self.fc2(q1))
         q1 = self.fc3(q1)
 
-        q2 = F.relu(self.fc4(xu))
+        # Q2 value
+        q2 = F.relu(self.fc4(x))
         q2 = F.relu(self.fc5(q2))
         q2 = self.fc6(q2)
+
         return q1, q2
 
-    def Q1(self, x, u):
-        xu = torch.cat([x, u], 1).to(self.device)
-        q1 = F.relu(self.fc1(xu))
+    def Q1(self, state, action):
+        # Convert action to one-hot encoding
+        one_hot_action = F.one_hot(action.long().squeeze(-1), num_classes=self.action_dim).float()
+        
+        x = torch.cat([state, one_hot_action], dim=1).to(self.device)
+
+        q1 = F.relu(self.fc1(x))
         q1 = F.relu(self.fc2(q1))
         q1 = self.fc3(q1)
         return q1
