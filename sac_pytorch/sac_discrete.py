@@ -10,9 +10,9 @@ import torch.nn.functional as F
 class SAC_Actor(nn.Module):
     def __init__(self, state_dim, action_dim, action_low, action_high, use_gpu):
         super(SAC_Actor, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 400)
-        self.fc2 = nn.Linear(400, 300)
-        self.fc_logits = nn.Linear(300, action_dim)
+        self.fc1 = nn.Linear(state_dim, 256)
+        self.fc2 = nn.Linear(256,256)
+        self.fc_logits = nn.Linear(256, action_dim)
         
         if use_gpu and torch.cuda.is_available():
             self.device = 'cuda'
@@ -26,30 +26,22 @@ class SAC_Actor(nn.Module):
         probs = F.softmax(logits, dim=-1)  # Convert logits to probabilities
         return probs
 
-    # def sample(self, state):
-    #     probs = self.forward(state)
-    #     dist = torch.distributions.Categorical(probs)
-    #     action = dist.sample()
-    #     action = action.unsqueeze(1)  # Add an additional dimension for the action
-    #     log_prob = dist.log_prob(action.squeeze(1))  # Log probability of the selected action
-    #     return action, log_prob
     def sample(self, state):
         probs = self.forward(state)
+        print(f'probs: {probs}')
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
+        print(f'action: {action}')
         log_prob = dist.log_prob(action)
         return action, log_prob
 
 
 # Critic Network (Twin Critic Networks)
 class SAC_Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, use_gpu, hidden_dim_1=400, hidden_dim_2=300):
+    def __init__(self, state_dim, action_dim, use_gpu, hidden_dim_1=256, hidden_dim_2=256):
         super(SAC_Critic, self).__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
-
-        print(f"Critic initialized with state_dim: {state_dim}, action_dim: {action_dim}")
-
 
         # Q1 architecture
         self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
@@ -69,7 +61,6 @@ class SAC_Critic(nn.Module):
     def forward(self, state, action):
         # state is expected to be of shape (batch_size, state_dim)
         # action is expected to be of shape (batch_size, 1) and contain integers
-
         # Convert action to one-hot encoding
         one_hot_action = F.one_hot(action.long().squeeze(-1), num_classes=self.action_dim).float()
         

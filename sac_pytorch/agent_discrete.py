@@ -109,6 +109,7 @@ class Agent():
 
         # Target Entropy 
         self.target_entropy = -np.prod(self.entropy_coefficient) 
+        print(f'target entropy: {self.target_entropy }')
 
         # List to keep track of rewards collected per episode.
         self.rewards_per_episode = []
@@ -178,25 +179,36 @@ class Agent():
         with torch.no_grad():
             next_action, next_log_prob = self.actor.sample(next_states)
             next_q1, next_q2 = self.critic_target(next_states, next_action) 
-            next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob.unsqueeze(1)
+
+             # Calculate expected next Q value using the action probabilities
+            next_q = torch.min(next_q1, next_q2)
+            #next_v = torch.sum(next_action * (next_q - self.alpha * next_log_prob), dim=1, keepdim=True)
+
+            next_v = next_q - self.alpha * next_log_prob.unsqueeze(1)
+
+            #next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob.unsqueeze(1)
             target_q = rewards + (1 - dones) * self.discount * next_v
 
-        q1, q2 = self.critic(states, actions)
-        critic_loss = nn.MSELoss()(q1, target_q) + nn.MSELoss()(q2, target_q)
+        current_q1, current_q2 = self.critic(states, actions)
+
+
+        critic_loss = nn.MSELoss()(current_q1, target_q) + nn.MSELoss()(current_q2, target_q)
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
 
         # Update the actor network
-        action, log_prob = self.actor.sample(states)
-        q1, q2 = self.critic(states, action)  # Change this line
-        actor_loss = (self.alpha * log_prob.unsqueeze(1) - torch.min(q1, q2)).mean()
+        action_probs, log_prob = self.actor.sample(states)
+        q1, q2 = self.critic(states, action_probs) 
+
+        actor_loss = (self.alpha * log_prob.unsqueeze(1) - torch.min(q1, q2)).mean() ########
+
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
 
         # Update the entropy coefficient network (alpha)
-        alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
+        alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean() ########
         self.log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
@@ -227,7 +239,9 @@ class Agent():
 
             while(not terminated and not truncated and not step_count == self.max_timestep):
                 # Action selection
-                action, _ = self.select_action(state)  # Sample action from the actor
+                action, log_prob = self.select_action(state)  # Sample action from the actor
+
+                #print(f'action selected: {action}  Log_prob: {log_prob}')
     
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 terminated = step_count == self.max_timestep - 1 or terminated
@@ -286,7 +300,7 @@ class Agent():
 
             if self.target_entropy <= -self.minimum_entropy:
                 self.target_entropy = self.target_entropy * self.entropy_decay
-                #print(f'target_entropy: {self.target_entropy}')
+                print(f'target_entropy: {self.target_entropy}')
 
     # There is no functional difference between . pt and . pth when saving PyTorch models
     def save(self):
