@@ -109,9 +109,9 @@ class Agent():
         self.num_states = self.env.observation_space.shape[0] # Expecting type: Box(low, high, (shape0,), float64)
 
         # Target Entropy 
-        #self.target_entropy = -np.prod(self.entropy_coefficient) 
-        self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
-        print(f'target entropy: {self.target_entropy }')
+        self.target_entropy = -np.prod(2) 
+        #self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
+        #print(f'target entropy: {self.target_entropy }')
 
         # List to keep track of rewards collected per episode.
         self.rewards_per_episode = []
@@ -196,7 +196,6 @@ class Agent():
 
         # Update the actor network
         action_probs, log_prob = self.actor.sample(states)
-        alpha_log_prob = log_prob
         q1, q2 = self.critic(states, action_probs)
 
         # Update the entropy coefficient network (alpha)
@@ -219,80 +218,6 @@ class Agent():
         # Increment iteration counter
         self.total_it += 1
 
-
-
-
-
-    # def train(self):
-        # Sample a batch from the replay buffer
-        #states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
-
-        # Convert to tensors
-        # states = torch.FloatTensor(states).to(self.device)
-        # actions = torch.LongTensor(actions).to(self.device)  
-        # rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
-        # next_states = torch.FloatTensor(next_states).to(self.device)
-        # dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
-
-        # Update the critic networks
-        # with torch.no_grad():
-        #     next_action, next_log_prob = self.actor.sample(next_states)
-        #     next_q1, next_q2 = self.critic_target(next_states, next_action) 
-
-        #      # Calculate expected next Q value using the action probabilities
-        #     next_q = torch.min(next_q1, next_q2)
-        #     #next_v = torch.sum(next_action * (next_q - self.alpha * next_log_prob), dim=1, keepdim=True)
-
-        #     next_v = next_q - self.alpha * next_log_prob.unsqueeze(1)
-
-        #     #next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob.unsqueeze(1)
-        #     target_q = rewards + (1 - dones) * self.discount * next_v
-
-        # current_q1, current_q2 = self.critic(states, actions)
-
-
-        # critic_loss = nn.MSELoss()(current_q1, target_q) + nn.MSELoss()(current_q2, target_q)
-        # self.critic_optimizer.zero_grad()
-        # critic_loss.backward()
-        # self.critic_optimizer.step()
-
-        # Update the actor network
-        # action_probs, log_prob = self.actor.sample(states)
-
-        #  # Assuming log_prob is already calculated
-        # entropy = -log_prob  # Compute the mean entropy from log probabilities
-        # print(f'entropy: {entropy} ')
-
-
-        
-        # q1, q2 = self.critic(states, action_probs) 
-
-        # actor_loss = (self.alpha * log_prob.unsqueeze(1) - torch.min(q1, q2)).mean() 
-
-        # self.actor_optimizer.zero_grad()
-        # actor_loss.backward()
-        # self.actor_optimizer.step()
-
-        # # Update the entropy coefficient network (alpha)
-      
-
-        # # Update the entropy coefficient (alpha)
-        # alpha_loss = -(self.log_alpha * (entropy - self.target_entropy)).mean() 
-
-
-        # print(f'alpha loss: {alpha_loss}')
-
-        # self.log_alpha_optimizer.zero_grad()
-        # alpha_loss.backward()
-        # self.log_alpha_optimizer.step()
-        # self.alpha = self.log_alpha.exp().item()
-
-        # # Soft update the target networks
-        # for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-        #     target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
-        # # Increment iteration counter
-        # self.total_it += 1
 
     def run(self, is_training=True, continue_training=False):
 
@@ -371,9 +296,9 @@ class Agent():
             # decay entropy target
             self.target_entropies.append(self.target_entropy)
 
-            if self.target_entropy <= -self.minimum_entropy:
-                self.target_entropy = self.target_entropy * self.entropy_decay
-                print(f'target_entropy: {self.target_entropy}')
+            # if self.target_entropy <= -self.minimum_entropy:
+            #     self.target_entropy = self.target_entropy * self.entropy_decay
+            #     print(f'target_entropy: {self.target_entropy}')
 
     # There is no functional difference between . pt and . pth when saving PyTorch models
     def save(self):
