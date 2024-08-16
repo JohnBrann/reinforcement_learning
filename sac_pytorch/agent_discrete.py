@@ -111,7 +111,8 @@ class Agent():
         # Target Entropy 
         # self.target_entropy = 0.693
         #self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
-        self.target_entropy = -math.log(self.num_actions)
+        # self.target_entropy = -math.log(self.num_actions)
+        self.target_entropy = np.prod(self.entropy_coefficient)
         #print(f'target entropy: {self.target_entropy }')
 
         # List to keep track of rewards collected per episode.
@@ -223,7 +224,6 @@ class Agent():
         best_reward = None # Used to track best reward
         best_average_reward = None
 
-        self.target_entropies.append(self.target_entropy)
 
         for episode in self.max_episodes:
 
@@ -297,9 +297,9 @@ class Agent():
             # decay entropy target
             self.target_entropies.append(self.target_entropy)
 
-            # if self.target_entropy <= -self.minimum_entropy:
-            #     self.target_entropy = self.target_entropy * self.entropy_decay
-            #     # print(f'target_entropy: {self.target_entropy}')
+            if self.target_entropy <= -self.minimum_entropy:
+                self.target_entropy = self.target_entropy * self.entropy_decay
+                # print(f'target_entropy: {self.target_entropy}')
 
     # There is no functional difference between . pt and . pth when saving PyTorch models
     def save(self):
@@ -350,7 +350,7 @@ class Agent():
         # Set the same scale for all y-axes
         ax1.set_ylim([min(min(mean_rewards), min(mean_total)), max(max(mean_rewards), max(mean_total))])
         ax2.set_ylim(ax1.get_ylim())
-        ax3.set_ylim(min(self.target_entropies), max(self.target_entropies))  # Adjust scale for entropy
+        ax3.set_ylim(0, 5)  # Adjust scale for entropy
 
         # Adjust layout to create more space for the text box
         fig.tight_layout(rect=[0, 0.26, 1, 1])  # Adjust rect to leave more space at the bottom
