@@ -109,8 +109,8 @@ class Agent():
         self.num_states = self.env.observation_space.shape[0] # Expecting type: Box(low, high, (shape0,), float64)
 
         # Target Entropy 
-        self.target_entropy = -np.prod(2) 
-        #self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
+        #self.target_entropy = -np.prod(1) 
+        self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
         #print(f'target entropy: {self.target_entropy }')
 
         # List to keep track of rewards collected per episode.
@@ -129,7 +129,7 @@ class Agent():
 
 
         # Initialize alpha for entropy term (automatic tuning)
-        self.log_alpha = torch.tensor(np.log(self.alpha), device=self.device, requires_grad=True)
+        self.log_alpha = torch.tensor([np.log(self.alpha)], device=self.device, requires_grad=True)
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=self.learning_rate)
 
         # Initialize replay memory
@@ -199,11 +199,15 @@ class Agent():
         q1, q2 = self.critic(states, action_probs)
 
         # Update the entropy coefficient network (alpha)
-        alpha_loss = -(self.alpha * (log_prob + self.target_entropy)).mean()
+        alpha_loss = -(self.alpha * (self.log_alpha + self.target_entropy)).mean()
         self.log_alpha_optimizer.zero_grad()
         alpha_loss.backward(retain_graph=True)
         self.log_alpha_optimizer.step()
         self.alpha = self.log_alpha.exp().item()
+
+        test = self.log_alpha.exp().item()
+
+        print(f'test {test}')
 
         # Actor loss and optimization
         actor_loss = (self.alpha * log_prob.unsqueeze(1) - torch.min(q1, q2).detach()).mean()
@@ -239,7 +243,7 @@ class Agent():
                 # Action selection
                 action, log_prob = self.select_action(state)  # Sample action from the actor
 
-                #print(f'action selected: {action}  Log_prob: {log_prob}')
+                print(f'action selected: {action}  Log_prob: {log_prob}')
     
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 terminated = step_count == self.max_timestep - 1 or terminated
