@@ -166,10 +166,16 @@ class Agent():
             log_message = f"{start_time.strftime(self.DATE_FORMAT)}: Run starting..."
             print(log_message)
 
-    def select_action(self, state):
+    def select_action(self, state, determinsitic):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
-        action, log_prob = self.actor.sample(state)
-        return action.item(), log_prob
+
+        if determinsitic:
+            action, log_prob = self.actor.sample_deterministic(state)
+        else:
+            action, log_prob = self.actor.sample_nondeterministic(state)
+
+        action = action.cpu().numpy().item() if isinstance(action, torch.Tensor) else action
+        return action, log_prob
 
 
     def train(self):
@@ -185,7 +191,7 @@ class Agent():
 
         # Update the critic networks
         with torch.no_grad():
-            next_action, next_log_prob = self.actor.sample(next_states)
+            next_action, next_log_prob = self.actor.sample_nondeterministic(next_states)
             next_q1, next_q2 = self.critic_target(next_states, next_action)
             next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob
             target_q = rewards + (1 - dones) * self.discount * next_v
@@ -197,7 +203,7 @@ class Agent():
         self.critic_optimizer.step()
 
         # Update the actor network
-        action_probs, log_prob = self.actor.sample(states)
+        action_probs, log_prob = self.actor.sample_nondeterministic(states)
 
         # q1, q2 values based on the action taken
         q1, q2 = self.critic(states, actions)
@@ -239,19 +245,20 @@ class Agent():
             truncated = False       # True when max_timestep is reached
             episode_reward = 0.0    # Used to accumulate rewards per episode
             step_count = 0          # Used for syncing policy => target network
+            deterministic = False
 
             if not is_training or continue_training:
                 self.load()
 
             while(not terminated and not truncated and not step_count == self.max_timestep):
 
-                # epsilon = 0.1 # or some other small value
-                # if np.random.rand() < epsilon:
-                #     action = np.random.choice(self.num_actions)  # Random action
-                # else:
-                #     action, log_prob = self.select_action(state)  # Sample action from the actor
-                
-                action, log_prob = self.select_action(state)  # Sample action from the actor
+                epsilon = 0.5 # or some other small value
+                if np.random.rand() < epsilon:
+                   deterministic = False
+                else:
+                   deterministic = True  # Sample action from the actor
+
+                action, log_prob = self.select_action(state, deterministic)  # get action from the actor
                 #print(f'action selected: {action}  Log_prob: {log_prob}')
     
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
@@ -265,7 +272,7 @@ class Agent():
                 state = next_state
                 episode_reward += reward
                 step_count += 1
-            if self.replay_buffer.size() > self.batch_size:
+            if self.replay_buffer.size() > self.batch_size and deterministic == False:
                         # Train the agent
                         self.train()
                 
