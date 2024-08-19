@@ -192,6 +192,8 @@ class Agent():
         # Update the critic networks
         with torch.no_grad():
             next_action, next_log_prob = self.actor.sample_nondeterministic(next_states)
+            next_log_prob = next_log_prob.unsqueeze(1)
+            next_action = next_action.unsqueeze(1)
             next_q1, next_q2 = self.critic_target(next_states, next_action)
             next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob
             target_q = rewards + (1 - dones) * self.discount * next_v
@@ -252,7 +254,7 @@ class Agent():
 
             while(not terminated and not truncated and not step_count == self.max_timestep):
 
-                epsilon = 0.5 # or some other small value
+                epsilon = 0.2 # or some other small value
                 if np.random.rand() < epsilon:
                    deterministic = False
                 else:
