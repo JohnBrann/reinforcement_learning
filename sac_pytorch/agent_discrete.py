@@ -22,6 +22,8 @@ import os
 
 from sac_discrete import SAC_Actor, SAC_Critic
 
+import flappy_bird_gymnasium
+
 # 'Agg': used to generate plots as images and save them to a file instead of rendering to screen
 matplotlib.use('Agg')
 
@@ -172,11 +174,11 @@ class Agent():
 
     def train(self):
         # Sample a batch from the replay buffer
-
         states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
+
         # Convert to tensors
         states = torch.FloatTensor(states).to(self.device)
-        actions = torch.FloatTensor(actions).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)  # Use LongTensor for discrete actions
         rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
@@ -184,7 +186,6 @@ class Agent():
         # Update the critic networks
         with torch.no_grad():
             next_action, next_log_prob = self.actor.sample(next_states)
-            next_log_prob = next_log_prob.unsqueeze(1)
             next_q1, next_q2 = self.critic_target(next_states, next_action)
             next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob
             target_q = rewards + (1 - dones) * self.discount * next_v
@@ -196,10 +197,12 @@ class Agent():
         self.critic_optimizer.step()
 
         # Update the actor network
-        action, log_prob = self.actor.sample(states)
-        q1, q2 = self.critic(states, action)
-        
-        actor_loss = (self.alpha * log_prob.unsqueeze(1) - torch.min(q1, q2)).mean()
+        action_probs, log_prob = self.actor.sample(states)
+
+        # q1, q2 values based on the action taken
+        q1, q2 = self.critic(states, actions)
+        actor_loss = (action_probs * (self.alpha * log_prob - torch.min(q1, q2))).mean()
+
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
@@ -217,6 +220,10 @@ class Agent():
 
         # Increment iteration counter
         self.total_it += 1
+
+        print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}')
+
+
 
 
     def run(self, is_training=True, continue_training=False):
@@ -237,9 +244,14 @@ class Agent():
                 self.load()
 
             while(not terminated and not truncated and not step_count == self.max_timestep):
-                # Action selection
-                action, log_prob = self.select_action(state)  # Sample action from the actor
 
+                # epsilon = 0.1 # or some other small value
+                # if np.random.rand() < epsilon:
+                #     action = np.random.choice(self.num_actions)  # Random action
+                # else:
+                #     action, log_prob = self.select_action(state)  # Sample action from the actor
+                
+                action, log_prob = self.select_action(state)  # Sample action from the actor
                 #print(f'action selected: {action}  Log_prob: {log_prob}')
     
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
@@ -248,13 +260,14 @@ class Agent():
                 if is_training or continue_training:
                     self.replay_buffer.add(state, action, reward, next_state, terminated)
 
-                    if self.replay_buffer.size() > self.batch_size:
-                        # Train the agent
-                        self.train()
+        
 
                 state = next_state
                 episode_reward += reward
                 step_count += 1
+            if self.replay_buffer.size() > self.batch_size:
+                        # Train the agent
+                        self.train()
                 
             # Keep track of the rewards collected per episode and save model
             self.rewards_per_episode.append(episode_reward)
