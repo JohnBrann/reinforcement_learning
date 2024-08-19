@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 # Actor Network
 class SAC_Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, action_low, action_high, use_gpu, dims=10):
+    def __init__(self, state_dim, action_dim, action_low, action_high, use_gpu, dims=256):
         super(SAC_Actor, self).__init__()
         self.fc1 = nn.Linear(state_dim, dims)
         self.fc2 = nn.Linear(dims,dims)
@@ -25,13 +25,22 @@ class SAC_Actor(nn.Module):
         probs = F.softmax(logits, dim=-1)  # Convert logits to probabilities
         return probs
 
-    def sample(self, state):
+    # This samples an action non-determinsitically, selecting a random action from the distribution
+    def sample_nondeterministic(self, state):
         probs = self.forward(state)
         #print(f'probs: {probs}')
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
-        # print(f'action: {action}')
+        #print(f'action: {action}')
         log_prob = dist.log_prob(action)
+        return action, log_prob
+
+     # This samples an action determinsitically, selecting the most probable action
+    def sample_deterministic(self, state):
+        action_probs = self.forward(state)
+        action_probs = action_probs.squeeze()
+        action = torch.argmax(action_probs).item()
+        log_prob = torch.log(action_probs[action])
         return action, log_prob
 
 
@@ -60,8 +69,7 @@ class SAC_Critic(nn.Module):
     def forward(self, state, action):
         # state is expected to be of shape (batch_size, state_dim)
         # action is expected to be of shape (batch_size, 1) and contain integers
-
-        action = action.unsqueeze(1)
+        #action = action.unsqueeze(1)
         # Convert action to one-hot encoding
         one_hot_action = F.one_hot(action.long().squeeze(-1), num_classes=self.action_dim).float()
         
