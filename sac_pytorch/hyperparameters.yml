@@ -1,15 +1,15 @@
 # Continuous Envs
 bipedal1:
   env_id: BipedalWalker-v3
-  input_model_name: bipedal3
-  output_model_name: bipedal6
+  input_model_name: bipedal1
+  output_model_name: TEST
   render: False
   state_dim: 24
   action_dim: 4
   action_low: -1
   action_high: 1
   replay_memory_size: 100000
-  batch_size: 128
+  batch_size: 28
   discount: 0.99
   tau: 0.005
   learning_rate: 0.0003
@@ -22,9 +22,9 @@ bipedal1:
   max_timestep: 1600
   max_episodes: 30000
   alpha: 0.2
-  entropy_coefficient: 3
-  minimum_entropy: 0.05
-  entropy_decay: 0.9995
+  entropy_coefficient: 4
+  minimum_entropy: 3.8
+  entropy_decay: 0.99
   env_make_params:
     hardcore: False
 
@@ -120,18 +120,45 @@ pendulum2:
 # Discrete Envs
 cartpole1:
   env_id: CartPole-v1
-  input_model_name: cartpole1
-  output_model_name: cartpole1
+  input_model_name: cartpole2
+  output_model_name: cartpole2
   render: False
   state_dim: 4
   action_dim: 2
   action_low: 0
   action_high: 1
-  replay_memory_size: 100000
-  batch_size: 100
+  replay_memory_size: 10000
+  batch_size: 256
   discount: 0.99
   tau: 0.005
-  learning_rate: 0.01
+  learning_rate: 0.0003
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_freq: 2
+  model_save_freq: 100
+  total_it: 0
+  max_reward: 1000
+  max_timestep: 500
+  max_episodes: 3000
+  alpha: 0.5
+  entropy_coefficient: 2
+  minimum_entropy: 1.6
+  entropy_decay: 0.999
+
+flappybird:
+  env_id: FlappyBird-v0
+  input_model_name: FLAPPYBIRD1
+  output_model_name: FLAPPPYBIRD1
+  render: False
+  state_dim: 12
+  action_dim: 2
+  action_low: 0
+  action_high: 1
+  replay_memory_size: 10000
+  batch_size: 256
+  discount: 0.99
+  tau: 0.005
+  learning_rate: 0.0001
   policy_noise: 0.2
   noise_clip: 0.5
   policy_freq: 2
@@ -142,8 +169,10 @@ cartpole1:
   max_episodes: 3000
   alpha: 0.2
   entropy_coefficient: 0.5
-  minimum_entropy: 0.05
-  entropy_decay: 0.9998
+  minimum_entropy: 1.6
+  entropy_decay: 0.999
+  env_make_params:
+    use_lidar: False
 
 
 lundarlanding:
@@ -217,29 +246,31 @@ lunarlanding2:
 
 acrobot:
   env_id: Acrobot-v1
-  input_model_name: 
+  input_model_name: acrobot1
   output_model_name: acrobot1
   render: False
   state_dim: 6
   action_dim: 3
   action_low: 0
   action_high: 3
-  replay_memory_size: 100000
-  batch_size: 100
+  replay_memory_size: 10000
+  batch_size: 256
   discount: 0.99
   tau: 0.005
-  learning_rate: 0.0005
+  learning_rate: 0.0003
   policy_noise: 0.2
   noise_clip: 0.5
   policy_freq: 2
   model_save_freq: 100
   total_it: 0
-  max_reward: 0
+  max_reward: 1000
   max_timestep: 500
   max_episodes: 3000
   alpha: 0.2
-  entropy_coefficient: 1
-  minimum_entropy: 0.01
-  entropy_decay: 0.999
+  entropy_coefficient: 2
+  minimum_entropy: 0.05
+  entropy_decay: 0.9999
+
+
 
 
