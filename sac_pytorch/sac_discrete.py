@@ -21,7 +21,7 @@ class SAC_Actor(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        logits = self.fc_logits(x)  # Output the raw logits for each action, the actual values from the layer
+        logits = self.fc_logits(x)  # Output the raw logits for each action, the actual values from the layerSSS
         probs = F.softmax(logits, dim=-1)  # Convert logits to probabilities
         return probs
 
@@ -33,16 +33,27 @@ class SAC_Actor(nn.Module):
         action = dist.sample()
         #print(f'action: {action}')
         log_prob = dist.log_prob(action)
+
         return action, log_prob
+
+    def get_action_distributions(self, state):
+        action_probs = self.forward(state)  # action_probs will have shape [256, 2]
+        log_probs = torch.log(action_probs)  # log_probs will have shape [256, 2]
+        return action_probs, log_probs
 
      # This samples an action determinsitically, selecting the most probable action
+    # def sample_deterministic(self, state):
+    #     action_probs = self.forward(state)
+    #     action_probs = action_probs.squeeze()
+    #     action = torch.argmax(action_probs).item()
+    #     log_prob = torch.log(action_probs[action])
+    #     return action, log_prob
+
     def sample_deterministic(self, state):
         action_probs = self.forward(state)
-        action_probs = action_probs.squeeze()
-        action = torch.argmax(action_probs).item()
-        log_prob = torch.log(action_probs[action])
+        action = torch.argmax(action_probs, dim=-1)  # action will have shape [256]
+        log_prob = torch.log(action_probs[range(action_probs.size(0)), action])  # log_prob will have shape [256]
         return action, log_prob
-
 
 # Critic Network (Twin Critic Networks)
 class SAC_Critic(nn.Module):
@@ -54,12 +65,12 @@ class SAC_Critic(nn.Module):
         # Q1 architecture
         self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
         self.fc2 = nn.Linear(hidden_dim_1, hidden_dim_2)
-        self.fc3 = nn.Linear(hidden_dim_2, 1)
+        self.fc3 = nn.Linear(hidden_dim_2, 2)
 
         # Q2 architecture
         self.fc4 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
         self.fc5 = nn.Linear(hidden_dim_1, hidden_dim_2)
-        self.fc6 = nn.Linear(hidden_dim_2, 1)
+        self.fc6 = nn.Linear(hidden_dim_2, 2)
 
         if use_gpu and torch.cuda.is_available():
             self.device = 'cuda'
@@ -69,7 +80,7 @@ class SAC_Critic(nn.Module):
     def forward(self, state, action):
         # state is expected to be of shape (batch_size, state_dim)
         # action is expected to be of shape (batch_size, 1) and contain integers
-        #action = action.unsqueeze(1)
+        action = action.argmax(dim=-1)
         # Convert action to one-hot encoding
         one_hot_action = F.one_hot(action.long().squeeze(-1), num_classes=self.action_dim).float()
         
