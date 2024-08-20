@@ -121,7 +121,7 @@ pendulum2:
 cartpole1:
   env_id: CartPole-v1
   input_model_name: cartpole2
-  output_model_name: cartpole2
+  output_model_name: cartpole3
   render: False
   state_dim: 4
   action_dim: 2
@@ -131,7 +131,7 @@ cartpole1:
   batch_size: 256
   discount: 0.99
   tau: 0.005
-  learning_rate: 0.0003
+  learning_rate: 0.0001
   policy_noise: 0.2
   noise_clip: 0.5
   policy_freq: 2
@@ -140,10 +140,10 @@ cartpole1:
   max_reward: 1000
   max_timestep: 500
   max_episodes: 3000
-  alpha: 0.5
+  alpha: 0.01
   entropy_coefficient: 2
-  minimum_entropy: 1.6
-  entropy_decay: 0.999
+  minimum_entropy: 0.05
+  entropy_decay: 0.9999
 
 flappybird:
   env_id: FlappyBird-v0
@@ -168,7 +168,7 @@ flappybird:
   max_timestep: 500
   max_episodes: 3000
   alpha: 0.2
-  entropy_coefficient: 0.5
+  entropy_coefficient: 2
   minimum_entropy: 1.6
   entropy_decay: 0.999
   env_make_params:
