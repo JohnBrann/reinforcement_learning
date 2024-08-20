@@ -124,17 +124,17 @@ class Agent():
 
         # Create actor and critic networks
         self.actor = SAC_Actor(self.num_states, self.num_actions, use_gpu, self.action_low, self.action_high).to(self.device)
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.learning_rate)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=0.0005)
 
         self.critic = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
         self.critic_target = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.learning_rate)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=0.0003)
 
 
         # Initialize alpha for entropy term (automatic tuning)
         self.log_alpha = torch.tensor([np.log(self.alpha)], device=self.device, requires_grad=True)
-        self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=self.learning_rate)
+        self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=0.001)
 
         # Initialize alpha directly
         # self.alpha = torch.tensor([self.alpha], device=self.device, requires_grad=True)
@@ -166,10 +166,10 @@ class Agent():
             log_message = f"{start_time.strftime(self.DATE_FORMAT)}: Run starting..."
             print(log_message)
 
-    def select_action(self, state, determinsitic):
+    def select_action(self, state, evaluation_episode):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
 
-        if determinsitic:
+        if evaluation_episode:
             action, log_prob = self.actor.sample_deterministic(state)
         else:
             action, log_prob = self.actor.sample_nondeterministic(state)
@@ -184,18 +184,19 @@ class Agent():
 
         # Convert to tensors
         states = torch.FloatTensor(states).to(self.device)
-        actions = torch.LongTensor(actions).to(self.device)  # Use LongTensor for discrete actions
+        actions = torch.FloatTensor(actions).unsqueeze(1).to(self.device)  # Use LongTensor for discrete actions
         rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
 
         # Update the critic networks
         with torch.no_grad():
-            next_action, next_log_prob = self.actor.sample_nondeterministic(next_states)
-            next_log_prob = next_log_prob.unsqueeze(1)
-            next_action = next_action.unsqueeze(1)
+            next_action, next_log_prob = self.actor.get_action_distributions(next_states)
+            # next_log_prob = next_log_prob.unsqueeze(1)
+            next_action = next_action.squeeze(-1)
+
             next_q1, next_q2 = self.critic_target(next_states, next_action)
-            next_v = torch.min(next_q1, next_q2) - self.alpha * next_log_prob
+            next_v = (torch.min(next_q1, next_q2) - self.alpha * next_log_prob)#.sum(dim=1)
             target_q = rewards + (1 - dones) * self.discount * next_v
 
         q1, q2 = self.critic(states, actions)
@@ -205,11 +206,13 @@ class Agent():
         self.critic_optimizer.step()
 
         # Update the actor network
-        action_probs, log_prob = self.actor.sample_nondeterministic(states)
+        action_probs, log_prob = self.actor.get_action_distributions(states)
+
 
         # q1, q2 values based on the action taken
         q1, q2 = self.critic(states, actions)
-        actor_loss = (action_probs * (self.alpha * log_prob - torch.min(q1, q2))).mean()
+        inside_term = self.alpha * log_prob - torch.min(q1, q2)
+        actor_loss = (action_probs * inside_term).sum(dim=1).mean()
 
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
@@ -222,6 +225,7 @@ class Agent():
         self.log_alpha_optimizer.step()
         self.alpha = self.log_alpha.exp().item()
 
+
         # Soft update the target networks
         for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
@@ -229,7 +233,7 @@ class Agent():
         # Increment iteration counter
         self.total_it += 1
 
-        print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}')
+        print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}. Alpha: {self.alpha}')
 
 
 
@@ -238,6 +242,7 @@ class Agent():
 
         best_reward = None # Used to track best reward
         best_average_reward = None
+        episode_count = 0 # keep track of how many episodes have occured
 
 
         for episode in self.max_episodes:
@@ -252,15 +257,23 @@ class Agent():
             if not is_training or continue_training:
                 self.load()
 
+            if episode_count % 4 == 0:
+                    evaluation_episode = False
+            else: 
+                    evaluation_episode = True
+
             while(not terminated and not truncated and not step_count == self.max_timestep):
 
-                epsilon = 0.2 # or some other small value
-                if np.random.rand() < epsilon:
-                   deterministic = False
-                else:
-                   deterministic = True  # Sample action from the actor
+                # every 4 episodes we will deterministically get the best episode
+               
 
-                action, log_prob = self.select_action(state, deterministic)  # get action from the actor
+                # epsilon = 0.5 # or some other small value
+                # if np.random.rand() < epsilon:
+                #    deterministic = False
+                # else:
+                #    deterministic = True  # Sample action from the actor
+
+                action, _ = self.select_action(state, evaluation_episode)  # get action from the actor
                 #print(f'action selected: {action}  Log_prob: {log_prob}')
     
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
@@ -274,7 +287,10 @@ class Agent():
                 state = next_state
                 episode_reward += reward
                 step_count += 1
-            if self.replay_buffer.size() > self.batch_size and deterministic == False:
+            
+            episode_count = episode_count + 1
+
+            if self.replay_buffer.size() > self.batch_size and not evaluation_episode: #?????
                         # Train the agent
                         self.train()
                 
