@@ -73,6 +73,7 @@ class Agent():
         self.max_episodes           = hyperparameters['max_episodes']
         self.alpha                  = hyperparameters['alpha']
         self.entropy_coefficient    = hyperparameters['entropy_coefficient'] 
+        self.initial_entropy        = hyperparameters['initial_entropy'] 
         self.minimum_entropy        = hyperparameters['minimum_entropy']
         self.entropy_decay          = hyperparameters['entropy_decay']
         self.env_make_params        = hyperparameters.get('env_make_params',{})     # Get optional environment-specific parameters, default to empty dict
@@ -112,10 +113,15 @@ class Agent():
 
         # Target Entropy 
         # self.target_entropy = 0.693
-        #self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
+       # self.target_entropy = - 0.98 * math.log(1 / self.num_actions) 
+
+        #self.target_entropy = -(0.98 * -np.log(1 / self.num_actions))  # Target entropySSSS
+
+        #self.target_entropy = 0.98 * -np.log(1 / self.environment.action_space.n)  # TargSSSSet entropy
+
         # self.target_entropy = -math.log(self.num_actions)
-        self.target_entropy = np.prod(self.entropy_coefficient)
-        #print(f'target entropy: {self.target_entropy }')
+        self.target_entropy = np.prod(self.initial_entropy)
+        print(f'target entropy: {self.target_entropy }')
 
         # List to keep track of rewards collected per episode.
         self.rewards_per_episode = []
@@ -124,12 +130,12 @@ class Agent():
 
         # Create actor and critic networks
         self.actor = SAC_Actor(self.num_states, self.num_actions, use_gpu, self.action_low, self.action_high).to(self.device)
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=0.0005)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=0.0003)
 
         self.critic = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
         self.critic_target = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=0.0003)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=0.0005)
 
 
         # Initialize alpha for entropy term (automatic tuning)
@@ -170,12 +176,12 @@ class Agent():
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
 
         if evaluation_episode:
-            action, log_prob = self.actor.sample_deterministic(state)
+            action_probs, log_action_probs = self.actor.sample_deterministic(state)
         else:
-            action, log_prob = self.actor.sample_nondeterministic(state)
+            action_probs, log_action_probs = self.actor.sample_nondeterministic(state)
 
-        action = action.cpu().numpy().item() if isinstance(action, torch.Tensor) else action
-        return action, log_prob
+        action_probs = action_probs.cpu().numpy().item() if isinstance(action_probs, torch.Tensor) else action_probs
+        return action_probs, log_action_probs
 
 
     def train(self):
@@ -191,12 +197,11 @@ class Agent():
 
         # Update the critic networks
         with torch.no_grad():
-            next_action, next_log_prob = self.actor.get_action_distributions(next_states)
-            # next_log_prob = next_log_prob.unsqueeze(1)
-            next_action = next_action.squeeze(-1)
+            next_action_probs, next_log_action_probs = self.actor.get_action_distributions(next_states)
+            next_action_probs = next_action_probs.squeeze(-1)
 
-            next_q1, next_q2 = self.critic_target(next_states, next_action)
-            next_v = (torch.min(next_q1, next_q2) - self.alpha * next_log_prob)#.sum(dim=1)
+            next_q1, next_q2 = self.critic_target(next_states, next_action_probs)
+            next_v = (torch.min(next_q1, next_q2) - self.alpha * next_log_action_probs)
             target_q = rewards + (1 - dones) * self.discount * next_v
 
         q1, q2 = self.critic(states, actions)
@@ -206,12 +211,12 @@ class Agent():
         self.critic_optimizer.step()
 
         # Update the actor network
-        action_probs, log_prob = self.actor.get_action_distributions(states)
+        action_probs, log_action_probs = self.actor.get_action_distributions(states)
 
 
         # q1, q2 values based on the action taken
         q1, q2 = self.critic(states, actions)
-        inside_term = self.alpha * log_prob - torch.min(q1, q2)
+        inside_term = self.alpha * log_action_probs - torch.min(q1, q2)
         actor_loss = (action_probs * inside_term).sum(dim=1).mean()
 
         self.actor_optimizer.zero_grad()
@@ -219,7 +224,7 @@ class Agent():
         self.actor_optimizer.step()
 
         # Update the entropy coefficient network (alpha)
-        alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
+        alpha_loss = -(self.log_alpha * (log_action_probs + self.target_entropy).detach()).mean()
         self.log_alpha_optimizer.zero_grad()
         alpha_loss.backward()
         self.log_alpha_optimizer.step()
@@ -233,7 +238,7 @@ class Agent():
         # Increment iteration counter
         self.total_it += 1
 
-        print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}. Alpha: {self.alpha}')
+        print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}. Entropy: {self.target_entropy}')
 
 
 
@@ -274,7 +279,7 @@ class Agent():
                 #    deterministic = True  # Sample action from the actor
 
                 action, _ = self.select_action(state, evaluation_episode)  # get action from the actor
-                #print(f'action selected: {action}  Log_prob: {log_prob}')
+                #print(f'action selected: {action}  log_action_probs: {log_action_probs}')
     
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 terminated = step_count == self.max_timestep - 1 or terminated
@@ -290,7 +295,7 @@ class Agent():
             
             episode_count = episode_count + 1
 
-            if self.replay_buffer.size() > self.batch_size and not evaluation_episode: #?????
+            if self.replay_buffer.size() > self.batch_size and not evaluation_episode: 
                         # Train the agent
                         self.train()
                 
@@ -333,11 +338,12 @@ class Agent():
                 log_message = f"{datetime.now().strftime(self.DATE_FORMAT)}: This Episode Reward: {episode_reward:0.1f}"
                 print(log_message)
             # decay entropy target
-            self.target_entropies.append(self.target_entropy)
+            #self.target_entropies.append(self.target_entropy)
 
-            if self.target_entropy <= -self.minimum_entropy:
+            if self.target_entropy >= -self.minimum_entropy:
                 self.target_entropy = self.target_entropy * self.entropy_decay
-                # print(f'target_entropy: {self.target_entropy}')
+                #print(f'target_entropy: {self.target_entropy}')
+            self.target_entropies.append(self.target_entropy)
 
     # There is no functional difference between . pt and . pth when saving PyTorch models
     def save(self):
@@ -388,7 +394,7 @@ class Agent():
         # Set the same scale for all y-axes
         ax1.set_ylim([min(min(mean_rewards), min(mean_total)), max(max(mean_rewards), max(mean_total))])
         ax2.set_ylim(ax1.get_ylim())
-        ax3.set_ylim(0, 5)  # Adjust scale for entropy
+        ax3.set_ylim(-5,5 )  # Adjust scale for entropy
 
         # Adjust layout to create more space for the text box
         fig.tight_layout(rect=[0, 0.26, 1, 1])  # Adjust rect to leave more space at the bottom
