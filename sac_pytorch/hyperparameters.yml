@@ -121,16 +121,16 @@ pendulum2:
 cartpole1:
   env_id: CartPole-v1
   input_model_name: cartpole2
-  output_model_name: cartpole3
+  output_model_name: cartpole2
   render: False
   state_dim: 4
   action_dim: 2
   action_low: 0
   action_high: 1
-  replay_memory_size: 10000
+  replay_memory_size: 50000
   batch_size: 256
   discount: 0.99
-  tau: 0.005
+  tau: 1.0
   learning_rate: 0.0001
   policy_noise: 0.2
   noise_clip: 0.5
@@ -141,9 +141,10 @@ cartpole1:
   max_timestep: 500
   max_episodes: 3000
   alpha: 0.01
-  entropy_coefficient: 2
-  minimum_entropy: 0.05
-  entropy_decay: 0.9999
+  entropy_coefficient: 0.0001
+  initial_entropy: 2
+  minimum_entropy: -0.69
+  entropy_decay: 0.999
 
 flappybird:
   env_id: FlappyBird-v0
@@ -155,7 +156,7 @@ flappybird:
   action_low: 0
   action_high: 1
   replay_memory_size: 10000
-  batch_size: 256
+  batch_size: 100
   discount: 0.99
   tau: 0.005
   learning_rate: 0.0001
@@ -168,24 +169,25 @@ flappybird:
   max_timestep: 500
   max_episodes: 3000
   alpha: 0.2
-  entropy_coefficient: 2
-  minimum_entropy: 1.6
+  entropy_coefficient: 0.0001
+  initial_entropy: 2
+  minimum_entropy: -0.69
   entropy_decay: 0.999
   env_make_params:
     use_lidar: False
 
 
-lundarlanding:
+lunarlanding:
   env_id: LunarLander-v2
   input_model_name: 
-  output_model_name: lundarlanding1
+  output_model_name: lunarlanding1
   render: False
   state_dim: 8
   action_dim: 4
   action_low: 0
   action_high: 4
   replay_memory_size: 100000
-  batch_size: 100
+  batch_size: 256
   discount: 0.99
   tau: 0.005
   learning_rate: 0.001
@@ -198,8 +200,8 @@ lundarlanding:
   max_timestep: 2000
   max_episodes: 3000
   alpha: 0.2
-  entropy_coefficient: 1
-  minimum_entropy: 0.01
+  entropy_coefficient: 2
+  minimum_entropy: 0.1
   entropy_decay: 0.9998
   env_make_params:
     continuous: False
@@ -231,7 +233,7 @@ lunarlanding2:
   max_timestep: 1000
   max_episodes: 3000
   alpha: 0.2
-  entropy_coefficient: 1
+  entropy_coefficient: 3
   minimum_entropy: 0.01
   entropy_decay: 0.999
   env_make_params:
@@ -253,7 +255,7 @@ acrobot:
   action_dim: 3
   action_low: 0
   action_high: 3
-  replay_memory_size: 10000
+  replay_memory_size: 100000
   batch_size: 256
   discount: 0.99
   tau: 0.005
@@ -267,8 +269,8 @@ acrobot:
   max_timestep: 500
   max_episodes: 3000
   alpha: 0.2
-  entropy_coefficient: 2
-  minimum_entropy: 0.05
+  entropy_coefficient: 3
+  minimum_entropy: 0.1
   entropy_decay: 0.9999
 
 
