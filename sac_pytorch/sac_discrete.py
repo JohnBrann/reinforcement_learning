@@ -8,30 +8,38 @@ import torch.nn.functional as F
 
 # Actor Network
 class SAC_Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, action_low, action_high, use_gpu, dims=256):
+    def __init__(self, state_dim, action_dim, use_gpu, dims=256):
         super(SAC_Actor, self).__init__()
         self.fc1 = nn.Linear(state_dim, dims)
-        self.fc2 = nn.Linear(dims,dims)
+        self.fc2 = nn.Linear(dims, dims)
         self.fc_logits = nn.Linear(dims, action_dim)
         
         if use_gpu and torch.cuda.is_available():
             self.device = 'cuda'
         else:
             self.device = 'cpu'
+            
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        logits = self.fc_logits(x)  # Output the raw logits for each action, the actual values from the layerSSS
-        probs = F.softmax(logits, dim=-1)  # Convert logits to probabilities
+        logits = self.fc_logits(x)  # Raw logits
+        probs = F.softmax(logits, dim=-1)  # Stable softmax
+
+        print(probs)
+        probs = torch.clamp(probs, min=1e-8)  # Avoid zero probabilities
         return probs
 
-    # This samples an action non-determinsitically, selecting a random action from the distribution
     def sample_nondeterministic(self, state):
         probs = self.forward(state)
-        #print(f'probs: {probs}')
+      
+
+        # # Normalize (though softmax already does this)
+        # probs_sum = probs.sum(dim=1, keepdim=True)
+        # probs_sum = torch.clamp(probs_sum, min=1e-8)  # Avoid division by zero
+        # probs = probs / probs_sum
+
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
-        #print(f'action: {action}')
         log_prob = dist.log_prob(action)
 
         return action, log_prob
@@ -57,7 +65,7 @@ class SAC_Actor(nn.Module):
 
 # Critic Network (Twin Critic Networks)
 class SAC_Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, use_gpu, hidden_dim_1=250, hidden_dim_2=250):
+    def __init__(self, state_dim, action_dim, use_gpu, hidden_dim_1=256, hidden_dim_2=256):
         super(SAC_Critic, self).__init__()
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -65,12 +73,12 @@ class SAC_Critic(nn.Module):
         # Q1 architecture
         self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
         self.fc2 = nn.Linear(hidden_dim_1, hidden_dim_2)
-        self.fc3 = nn.Linear(hidden_dim_2, 2)
+        self.fc3 = nn.Linear(hidden_dim_2, 1)
 
-        # Q2 architecture
-        self.fc4 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
-        self.fc5 = nn.Linear(hidden_dim_1, hidden_dim_2)
-        self.fc6 = nn.Linear(hidden_dim_2, 2)
+        # # Q2 architecture
+        # self.fc4 = nn.Linear(state_dim + action_dim, hidden_dim_1)  # +1 for discrete action
+        # self.fc5 = nn.Linear(hidden_dim_1, hidden_dim_2)
+        # self.fc6 = nn.Linear(hidden_dim_2, 2)
 
         if use_gpu and torch.cuda.is_available():
             self.device = 'cuda'
@@ -80,23 +88,22 @@ class SAC_Critic(nn.Module):
     def forward(self, state, action):
         # state is expected to be of shape (batch_size, state_dim)
         # action is expected to be of shape (batch_size, 1) and contain integers
-        action = action.argmax(dim=-1)
-        # Convert action to one-hot encoding
+
+        # If action is not one-hot encoded already, convert it
+        action = action.argmax(dim=-1)  # This line may not be needed if actions are already correct
         one_hot_action = F.one_hot(action.long().squeeze(-1), num_classes=self.action_dim).float()
-        
+
+        # Concatenate state and action tensors
         x = torch.cat([state, one_hot_action], dim=1).to(self.device)
 
-        # Q1 value
-        q1 = F.relu(self.fc1(x))
-        q1 = F.relu(self.fc2(q1))
-        q1 = self.fc3(q1)
+        # Forward pass through the network layers
+        q = self.fc1(x)  # First fully connected layer
+        q = F.relu(q)    # ReLU activation, no in-place modification
+        q = self.fc2(q)  # Second fully connected layer
+        q = F.relu(q)    # ReLU activation, again no in-place modification
+        q = self.fc3(q)  # Final layer output
 
-        # Q2 value
-        q2 = F.relu(self.fc4(x))
-        q2 = F.relu(self.fc5(q2))
-        q2 = self.fc6(q2)
-
-        return q1, q2
+        return q
 
     def Q1(self, state, action):
         # Convert action to one-hot encoding
@@ -108,6 +115,34 @@ class SAC_Critic(nn.Module):
         q1 = F.relu(self.fc2(q1))
         q1 = self.fc3(q1)
         return q1
+
+
+class SAC_Value(nn.Module):
+    def __init__(self, state_dim, action_dim, use_gpu, hidden_dim_1=256, hidden_dim_2=256):
+        super(SAC_Value, self).__init__()
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+
+        # Q1 architecture
+        self.fc1 = nn.Linear(self.state_dim, hidden_dim_1)
+        self.fc2 = nn.Linear(hidden_dim_1,  hidden_dim_2)
+        self.v = nn.Linear(hidden_dim_2, 1)
+
+        if use_gpu and torch.cuda.is_available():
+            self.device = 'cuda'
+        else:
+            self.device = 'cpu'
+
+    def forward(self, state):
+        state_value = self.fc1(state)
+        state_value = F.relu(state_value)
+        state_value = self.fc2(state_value)
+        state_value = F.relu(state_value)
+
+        v = self.v(state_value)
+
+        return v
+ 
 
 
 def main():

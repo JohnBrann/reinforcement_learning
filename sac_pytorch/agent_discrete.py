@@ -20,7 +20,7 @@ import yaml
 from datetime import datetime, timedelta
 import os
 
-from sac_discrete import SAC_Actor, SAC_Critic
+from sac_discrete import SAC_Actor, SAC_Critic, SAC_Value
 
 import flappy_bird_gymnasium
 
@@ -129,22 +129,29 @@ class Agent():
         self.target_entropies = []  # List to track target entropy values
 
         # Create actor and critic networks
-        self.actor = SAC_Actor(self.num_states, self.num_actions, use_gpu, self.action_low, self.action_high).to(self.device)
+        self.actor = SAC_Actor(self.num_states, self.num_actions, use_gpu).to(self.device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=0.0003)
 
-        self.critic = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
-        self.critic_target = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
-        self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=0.0005)
+        self.critic1= SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
+        self.critic2 = SAC_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
+        self.critic2.load_state_dict(self.critic1.state_dict())
+        self.critic1_optimizer = torch.optim.Adam(self.critic1.parameters(), lr=0.0005)
+        self.critic2_optimizer = torch.optim.Adam(self.critic2.parameters(), lr=0.0005)
 
 
         # Initialize alpha for entropy term (automatic tuning)
         self.log_alpha = torch.tensor([np.log(self.alpha)], device=self.device, requires_grad=True)
+        self.alpha = self.log_alpha
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=0.001)
 
-        # Initialize alpha directly
-        # self.alpha = torch.tensor([self.alpha], device=self.device, requires_grad=True)
-        # self.log_alpha_optimizer = torch.optim.Adam([self.alpha], lr=self.learning_rate)
+
+        # Initializing the Value networks, Value and Target_Value
+        self.value = SAC_Value(self.num_states, self.num_actions, use_gpu).to(self.device)
+        self.target_value = SAC_Value(self.num_states, self.num_actions, use_gpu).to(self.device)
+        self.target_value.load_state_dict(self.value.state_dict())
+        self.value_optimizer = torch.optim.Adam(self.value.parameters(), lr=self.learning_rate)
+        self.target_value_optimizer = torch.optim.Adam(self.target_value.parameters(), lr=self.learning_rate)
+
 
 
         # Initialize replay memory
@@ -176,72 +183,142 @@ class Agent():
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
 
         if evaluation_episode:
-            action_probs, log_action_probs = self.actor.sample_deterministic(state)
+            action, log_action = self.actor.sample_deterministic(state)
         else:
-            action_probs, log_action_probs = self.actor.sample_nondeterministic(state)
+            action, log_action = self.actor.sample_nondeterministic(state)
 
-        action_probs = action_probs.cpu().numpy().item() if isinstance(action_probs, torch.Tensor) else action_probs
-        return action_probs, log_action_probs
+        action = action.cpu().numpy().item() if isinstance(action, torch.Tensor) else action
+        return action, log_action
 
 
     def train(self):
-        # Sample a batch from the replay buffer
+        torch.autograd.set_detect_anomaly(True)
+       # Sample a batch from the replay buffer
         states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
 
         # Convert to tensors
         states = torch.FloatTensor(states).to(self.device)
-        actions = torch.FloatTensor(actions).unsqueeze(1).to(self.device)  # Use LongTensor for discrete actions
+        actions = torch.LongTensor(actions).unsqueeze(1).to(self.device)  # Use LongTensor for discrete actions
         rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
+        dones = torch.BoolTensor(dones).unsqueeze(1).to(self.device)
+         # Convert alpha to tensor if it's not already
+        #self.alpha = torch.tensor(self.alpha).to(self.device)  # Convert alpha to a tensor if needed
 
-        # Update the critic networks
-        with torch.no_grad():
-            next_action_probs, next_log_action_probs = self.actor.get_action_distributions(next_states)
-            next_action_probs = next_action_probs.squeeze(-1)
 
-            next_q1, next_q2 = self.critic_target(next_states, next_action_probs)
-            next_v = (torch.min(next_q1, next_q2) - self.alpha * next_log_action_probs)
-            target_q = rewards + (1 - dones) * self.discount * next_v
-
-        q1, q2 = self.critic(states, actions)
-        critic_loss = nn.MSELoss()(q1, target_q) + nn.MSELoss()(q2, target_q)
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
-
-        # Update the actor network
+        # Get action probabilities and log probabilities from the actor for the current states
         action_probs, log_action_probs = self.actor.get_action_distributions(states)
 
+        # Compute Q-values using the critic networks for the selected actions
+        q1_new_policy = self.critic1(states, actions)
+        q2_new_policy = self.critic2(states, actions)
+        critic_value = torch.min(q1_new_policy, q2_new_policy)
 
-        # q1, q2 values based on the action taken
-        q1, q2 = self.critic(states, actions)
-        inside_term = self.alpha * log_action_probs - torch.min(q1, q2)
-        actor_loss = (action_probs * inside_term).sum(dim=1).mean()
+        # Compute the next state Q-values using the target networks
+        with torch.no_grad():
+            next_action_probs, next_log_action_probs = self.actor.get_action_distributions(next_states)
+            next_q1 = self.critic1(next_states, next_action_probs.argmax(dim=1, keepdim=True))
+            next_q2 = self.critic2(next_states, next_action_probs.argmax(dim=1, keepdim=True))
+            next_q_value = torch.min(next_q1, next_q2) - self.alpha * next_log_action_probs
 
+        # Compute the target Q-value (including entropy term)
+        target_q = rewards + (1 - dones.float()) * self.discount * next_q_value
+        target_q = torch.clamp(target_q, min=-1e20, max=1e20)  # Ensure stability
+
+        # Compute critic losses
+        q1_old_policy = self.critic1(states, actions)
+        q2_old_policy = self.critic2(states, actions)
+        
+        critic_1_loss = 0.5 * F.mse_loss(q1_old_policy, target_q)
+        critic_2_loss = 0.5 * F.mse_loss(q2_old_policy, target_q)
+        critic_loss = critic_1_loss + critic_2_loss
+        print(f'Critic Loss: {critic_loss}')
+
+        # Update critic networks
+        self.critic1_optimizer.zero_grad()
+        self.critic2_optimizer.zero_grad()
+        critic_loss.backward()
+        # Clip gradients to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(self.critic1.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.critic2.parameters(), max_norm=1.0)
+        self.critic1_optimizer.step()
+        self.critic2_optimizer.step()
+
+        # Compute actor loss (including entropy term)
+        actor_loss = torch.mean(self.alpha * log_action_probs - critic_value)
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+
+        # Clip gradients to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
         self.actor_optimizer.step()
 
-        # Update the entropy coefficient network (alpha)
-        alpha_loss = -(self.log_alpha * (log_action_probs + self.target_entropy).detach()).mean()
-        self.log_alpha_optimizer.zero_grad()
-        alpha_loss.backward()
-        self.log_alpha_optimizer.step()
-        self.alpha = self.log_alpha.exp().item()
+        # Update target networks
+        #self.update_network_parameters()
 
 
-        # Soft update the target networks
-        for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+
+
+        # Update the critic networks
+        # with torch.no_grad():
+        #     next_action_probs, next_log_action_probs = self.actor.get_action_distributions(next_states)
+        #     next_action_probs = next_action_probs.squeeze(-1)
+
+        #     next_q1 = self.critic1(next_states, next_action_probs)
+        #     next_q2  = self.critic2(next_states, next_action_probs)
+        #     next_v = (torch.min(next_q1, next_q2) - self.alpha * next_log_action_probs)
+        #     target_q = rewards + (1 - dones) * self.discount * next_v
+
+        # q1 = self.critic1(states, actions)
+        # q2 = self.critic2(states, actions)
+        # critic_loss = nn.MSELoss()(q1, target_q) + nn.MSELoss()(q2, target_q)
+        # self.critic_optimizer.zero_grad()
+        # critic_loss.backward()
+        # self.critic_optimizer.step()
+
+        # # Update the actor network
+        # action_probs, log_action_probs = self.actor.get_action_distributions(states)
+
+
+        # # q1, q2 values based on the action taken
+        # # q1 = self.critic1(states, actions)
+        # # q2 = self.critic2(states, actions)
+        # inside_term = self.alpha * log_action_probs - torch.min(q1, q2)
+        # actor_loss = (action_probs * inside_term).sum(dim=1).mean()
+
+        # self.actor_optimizer.zero_grad()
+        # actor_loss.backward()
+        # self.actor_optimizer.step()
+
+        # # Update the entropy coefficient network (alpha)
+        # alpha_loss = -(self.log_alpha * (log_action_probs + self.target_entropy).detach()).mean()
+        # self.log_alpha_optimizer.zero_grad()
+        # alpha_loss.backward()
+        # self.log_alpha_optimizer.step()
+        # self.alpha = self.log_alpha.exp().item()
+
 
         # Increment iteration counter
-        self.total_it += 1
+        # self.total_it += 1
 
-        print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}. Entropy: {self.target_entropy}')
+        # print(f'Critic Loss: {critic_loss}, Actor Loss: {actor_loss}, Alpha Loss: {alpha_loss}. Entropy: {self.target_entropy}')
 
 
+    def update_network_parameters(self, tau=None):
+        if tau is None:
+            tau = self.tau
 
+        target_value_params = self.target_value.named_parameters()
+        value_params = self.value.named_parameters()
+
+        target_value_state_dict = dict(target_value_params)
+        value_state_dict = dict(value_params)
+
+        for name in value_state_dict:
+            value_state_dict[name] = tau*value_state_dict[name].clone() + \
+                    (1-tau)*target_value_state_dict[name].clone()
+
+        self.target_value.load_state_dict(value_state_dict)
 
     def run(self, is_training=True, continue_training=False):
 
@@ -263,9 +340,9 @@ class Agent():
                 self.load()
 
             if episode_count % 4 == 0:
-                    evaluation_episode = False
-            else: 
                     evaluation_episode = True
+            else: 
+                    evaluation_episode = False
 
             while(not terminated and not truncated and not step_count == self.max_timestep):
 
@@ -350,12 +427,14 @@ class Agent():
         if not os.path.exists(self.RUNS_DIR):
             os.makedirs(self.RUNS_DIR)
         torch.save(self.actor.state_dict(), f"{self.RUNS_DIR}/{self.OUTPUT_FILENAME}_actor.pth")
-        torch.save(self.critic.state_dict(), f"{self.RUNS_DIR}/{self.OUTPUT_FILENAME}_critic.pth")
+        torch.save(self.critic1.state_dict(), f"{self.RUNS_DIR}/{self.OUTPUT_FILENAME}_critic1.pth")
+        torch.save(self.critic2.state_dict(), f"{self.RUNS_DIR}/{self.OUTPUT_FILENAME}_critic2.pth")
+
 
     def load(self):
         self.actor.load_state_dict(torch.load(f"{self.RUNS_DIR}/{self.INPUT_FILENAME}_actor.pth"))
-        self.critic.load_state_dict(torch.load(f"{self.RUNS_DIR}/{self.INPUT_FILENAME}_critic.pth"))
-        self.critic_target.load_state_dict(self.critic.state_dict())
+        self.critic1.load_state_dict(torch.load(f"{self.RUNS_DIR}/{self.INPUT_FILENAME}_critic1.pth"))
+        self.critic2.load_state_dict(torch.load(f"{self.RUNS_DIR}/{self.INPUT_FILENAME}_critic2.pth"))
     
 
     def save_graph(self, rewards_per_episode):
