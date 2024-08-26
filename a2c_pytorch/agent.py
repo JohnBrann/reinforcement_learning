@@ -42,6 +42,15 @@ class ReplayBuffer():
             return np.array([]), np.array([]), np.array([]), np.array([]), np.array([])
         
         states, actions, rewards, next_states, dones = zip(*self.buffer)
+        
+         # Ensure that tensors are moved to CPU before converting to NumPy arrays
+        states = [s.cpu().numpy() if isinstance(s, torch.Tensor) else s for s in states]
+        actions = [a.cpu().numpy() if isinstance(a, torch.Tensor) else a for a in actions]
+        rewards = [r.cpu().numpy() if isinstance(r, torch.Tensor) else r for r in rewards]
+        next_states = [ns.cpu().numpy() if isinstance(ns, torch.Tensor) else ns for ns in next_states]
+        dones = [d.cpu().numpy() if isinstance(d, torch.Tensor) else d for d in dones]
+        
+       
         return np.array(states), np.array(actions), np.array(rewards), np.array(next_states), np.array(dones)
 
     def size(self):
@@ -176,7 +185,7 @@ class Agent():
        
           # Compute critic loss
         Qval = self.critic(new_state)
-        Qval = Qval.detach().numpy()[0,0]
+        Qval = Qval.detach().cpu().numpy()[0]
 
         Qvals = np.zeros_like(self.values)
         for t in reversed(range(len(rewards))):
@@ -230,18 +239,18 @@ class Agent():
 
             while(not terminated and not truncated and not self.step_count == self.max_timestep):
                
-                if is_training or continue_training:
-                    #state = torch.FloatTensor(state).to(self.device)  # Move state to the correct device
-                    value = self.critic(state)
-                    policy_dist = self.actor(state)
+                state = torch.FloatTensor(state).unsqueeze(0).to(self.device)  # Move state to the correct device
 
-                    value = value.cpu().detach().numpy()[0,0]
-                    dist = policy_dist.cpu().detach().numpy() 
+                value = self.critic(state)
+                policy_dist = self.actor(state)
 
-                    action = np.random.choice(self.num_actions, p=np.squeeze(dist))
-                    log_prob = torch.log(policy_dist.squeeze(0)[action])
+                value = value.cpu().detach().numpy()[0,0]
+                dist = policy_dist.cpu().detach().numpy() 
 
-                    entropy = -np.sum(np.mean(dist) * np.log(dist))
+                action = np.random.choice(self.num_actions, p=np.squeeze(dist))
+                log_prob = torch.log(policy_dist.squeeze(0)[action])
+
+                entropy = -np.sum(np.mean(dist) * np.log(dist))
 
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 terminated = self.step_count == self.max_timestep - 1 or terminated
@@ -272,7 +281,7 @@ class Agent():
 
                 if (episode + 1) % 100 == 0:
                     #Save model
-                   # self.save()
+                    self.save()
                     time_now = datetime.now()
                     average_reward = np.mean(self.rewards_per_episode[-100:])
                     log_message = f"{time_now.strftime(self.DATE_FORMAT)}: Saving Model at Episode: {episode + 1} Average Reward: {average_reward:0.1f}"
@@ -300,13 +309,10 @@ class Agent():
 
     def load(self):
         self.actor.load_state_dict(torch.load(f"{self.RUNS_DIR}/{self.INPUT_FILENAME}_actor.pth"))
-        self.actor_target.load_state_dict(self.actor.state_dict())
         self.critic.load_state_dict(torch.load(f"{self.RUNS_DIR}/{self.INPUT_FILENAME}_critic.pth"))
-        self.critic_target.load_state_dict(self.critic.state_dict())
     
         
-        
-
+    
     def save_graph(self, rewards_per_episode):
         # Save plots
         fig, ax1 = plt.subplots()
