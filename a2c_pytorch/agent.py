@@ -19,7 +19,7 @@ import yaml
 from datetime import datetime, timedelta
 import os
 
-from a2c import ActorCritic
+from a2c import A2C_Actor, A2C_Critic
 
 # 'Agg': used to generate plots as images and save them to a file instead of rendering to screen
 matplotlib.use('Agg')
@@ -128,9 +128,13 @@ class Agent():
         self.values = []
 
 
+        # Initialize Actor Network
+        self.actor = A2C_Actor(self.num_states, self.num_actions, use_gpu).to(self.device)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.learning_rate)
 
-        self.actor_critic = ActorCritic(self.num_states, self.num_actions, use_gpu).to(self.device)
-        self.ac_optimizer = torch.optim.Adam(self.actor_critic.parameters(), lr=self.learning_rate)
+        # Initialize Critic Network
+        self.critic = A2C_Critic(self.num_states, self.num_actions, use_gpu).to(self.device)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.learning_rate)
 
         # Initialize replay memory
         self.replay_buffer = ReplayBuffer(self.replay_buffer_size)
@@ -170,29 +174,33 @@ class Agent():
         # retreive the last value in the next_state tensor 
         new_state = next_states[-1]
        
-        Qval, _ = self.actor_critic.forward(new_state)
+          # Compute critic loss
+        Qval = self.critic(new_state)
         Qval = Qval.detach().numpy()[0,0]
 
-
-         # compute Q values
         Qvals = np.zeros_like(self.values)
         for t in reversed(range(len(rewards))):
             Qval = rewards[t] + self.gamma * Qval
             Qvals[t] = Qval
 
-        self.values = torch.FloatTensor(self.values)
-        Qvals = torch.FloatTensor(Qvals)
-        self.log_probs = torch.stack(self.log_probs)
+        self.values = torch.FloatTensor(self.values).to(self.device)
+        Qvals = torch.FloatTensor(Qvals).to(self.device)
+        self.log_probs = torch.stack(self.log_probs).to(self.device)
 
         advantage = Qvals - self.values
+        advantage.requires_grad = True
 
-        actor_loss = (-self.log_probs * advantage).mean()
+        # Compute critic loss and update critic network
         critic_loss = 0.5 * advantage.pow(2).mean()
-        ac_loss = actor_loss + critic_loss + 0.001 * self.entropy_term
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
 
-        self.ac_optimizer.zero_grad()
-        ac_loss.backward()
-        self.ac_optimizer.step()
+        # Compute actor loss and update actor network
+        actor_loss = (-self.log_probs * advantage).mean()
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step()
 
         
     def run(self, is_training=True, continue_training=False):
@@ -223,7 +231,9 @@ class Agent():
             while(not terminated and not truncated and not self.step_count == self.max_timestep):
                
                 if is_training or continue_training:
-                    value, policy_dist = self.actor_critic.forward(state)
+                    #state = torch.FloatTensor(state).to(self.device)  # Move state to the correct device
+                    value = self.critic(state)
+                    policy_dist = self.actor(state)
 
                     value = value.cpu().detach().numpy()[0,0]
                     dist = policy_dist.cpu().detach().numpy() 
@@ -233,16 +243,9 @@ class Agent():
 
                     entropy = -np.sum(np.mean(dist) * np.log(dist))
 
-
-        
-
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 terminated = self.step_count == self.max_timestep - 1 or terminated
                 self.step_count += 1
-
-                # if terminated:
-                #     Qval, _  = self.actor_critic.forward(next_state)   
-                #     Qval = Qval.detach().numpy()[0,0]
 
                 if is_training or continue_training:
                     self.replay_buffer.add(state, action, reward, next_state, terminated)
