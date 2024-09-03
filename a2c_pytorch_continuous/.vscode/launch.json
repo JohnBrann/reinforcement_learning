@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "agent.py",
             "console": "integratedTerminal",
-            "args": ["cartpole", "--train", "--endless", "--use_gpu"]
+            "args": ["bipedalwalker", "--train", "--endless", "--use_gpu"]
         }
     ]
 }

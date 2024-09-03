@@ -3,13 +3,13 @@ from torch import nn
 import torch.nn.functional as F
 
 class A2C_Actor(nn.Module):
-    def __init__(self, num_inputs, num_actions, use_gpu, hidden_size=256):
+    def __init__(self, num_inputs, num_actions, use_gpu, hidden_size=128):
         super(A2C_Actor, self).__init__()
 
         self.num_actions = num_actions
 
-        self.actor_linear1 = nn.Linear(num_inputs, hidden_size)
-        self.actor_linear2 = nn.Linear(hidden_size, num_actions)
+        self.fc1 = nn.Linear(num_inputs, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
         
         self.fc_mean = nn.Linear(hidden_size, num_actions)
         self.fc_log_std = nn.Linear(hidden_size, num_actions)
@@ -47,7 +47,7 @@ class A2C_Actor(nn.Module):
     #     return policy_dist
     
 class A2C_Critic(nn.Module):
-    def __init__(self, num_inputs, num_actions, use_gpu, hidden_size=256):
+    def __init__(self, num_inputs, num_actions, use_gpu, hidden_size=128):
         super(A2C_Critic, self).__init__()
 
         self.critic_linear1 = nn.Linear(num_inputs, hidden_size)
@@ -57,6 +57,7 @@ class A2C_Critic(nn.Module):
         self.to(self.device)  # Move network to the device
     
     def forward(self, state):
+        #state = torch.FloatTensor(state).unsqueeze(0).to(self.device)  # Move state to the correct device 
         value = F.relu(self.critic_linear1(state))
         value = self.critic_linear2(value)
 

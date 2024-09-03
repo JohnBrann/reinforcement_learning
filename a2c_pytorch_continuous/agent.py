@@ -110,7 +110,7 @@ class Agent():
         else:
             self.device = 'cpu'
 
-        # set endless mode if endless arg is true, otherwise set max episodes based on parameters 
+        # set endless mode if endless arg is true, otherwise set max episodes based on parameters
         if endless or not self.is_training:
             self.max_episodes = itertools.count()
         else:
@@ -169,9 +169,15 @@ class Agent():
             start_time = datetime.now()
             log_message = f"{start_time.strftime(self.DATE_FORMAT)}: Run starting..."
             print(log_message)
+
+    def select_action(self, state):
+       # state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
+
+        with torch.no_grad():
+            action, log_prob = self.actor.sample(state)
+        return action.cpu().numpy().flatten(), log_prob
     
     def train(self):
-       
         states, actions, rewards, next_states, dones = self.replay_buffer.get_all()
 
         states = torch.FloatTensor(states).to(self.device)
@@ -181,26 +187,15 @@ class Agent():
         dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
 
         # retreive the last value in the next_state tensor 
-        # new_state = next_states[-1]
+        new_state = next_states[-1]
        
-        #   # Compute critic loss
-        # Qval = self.critic(new_state)
-        # Qval = Qval.detach().cpu().numpy()[0]
+          # Compute critic loss
+        Qval = self.critic(new_state)
+        Qval = Qval.detach().cpu().numpy()[0]
 
-        # Qvals = np.zeros_like(self.values)
-        # for t in reversed(range(len(rewards))):
-        #     Qval = rewards[t] + self.gamma * Qval
-        #     Qvals[t] = Qval
-
-          # Compute the value for next states
-        with torch.no_grad():
-            next_values = self.critic(next_states)
-            next_values = next_values.cpu().numpy().flatten()
-    
-    # Compute Q-values using rewards and next values
-        Qvals = np.zeros_like(rewards)
+        Qvals = np.zeros_like(self.values)
         for t in reversed(range(len(rewards))):
-            Qval = rewards[t] + self.gamma * (1 - dones[t]) * next_values[t]
+            Qval = rewards[t] + self.gamma * Qval
             Qvals[t] = Qval
 
         self.values = torch.FloatTensor(self.values).to(self.device)
@@ -217,7 +212,7 @@ class Agent():
         self.critic_optimizer.step()
 
         # Compute actor loss and update actor network
-        actor_loss = (-self.log_probs * advantage.detach()).mean()
+        actor_loss = (-self.log_probs * advantage).mean()
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
         self.actor_optimizer.step()
@@ -233,7 +228,6 @@ class Agent():
 
             state, _ = self.env.reset()  # Initialize environment. Reset returns (state,info).
             terminated = False      # True when agent reaches goal or fails
-            truncated = False       # True when max_timestep is reached
             episode_reward = 0.0    # Used to accumulate rewards per episode
             self.step_count = 0          # Used for syncing policy => target network
 
@@ -248,27 +242,18 @@ class Agent():
             if not is_training or continue_training:
                 self.load()
 
-            while(not terminated and not truncated and not self.step_count == self.max_timestep):
+            while(not terminated and not self.step_count == self.max_timestep):
                
                 state = torch.FloatTensor(state).unsqueeze(0).to(self.device)  # Move state to the correct device
 
                 value = self.critic(state)
 
-              #  policy_dist = self.actor(state)
-                action, log_prob = self.actor.sample(state)
+                action, log_prob = self.select_action(state)
 
-                # value = value.cpu().detach().numpy()[0,0]
-                # dist = policy_dist.cpu().detach().numpy() 
+                next_state, reward, terminated, _, _ = self.env.step(action)
 
-                # action = np.random.choice(self.num_actions, p=np.squeeze(dist))
-                # log_prob = torch.log(policy_dist.squeeze(0)[action])
+                next_state = torch.FloatTensor(next_state).unsqueeze(0).to(self.device)
 
-                # entropy = -np.sum(np.mean(dist) * np.log(dist))
-
-
-
-
-                next_state, reward, terminated, truncated, _ = self.env.step(action)
                 terminated = self.step_count == self.max_timestep - 1 or terminated
                 self.step_count += 1
 
