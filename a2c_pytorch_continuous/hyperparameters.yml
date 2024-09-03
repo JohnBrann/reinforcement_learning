@@ -1,0 +1,24 @@
+bipedalwalker:
+  env_id: BipedalWalker-v3
+  input_model_name: bipedal1
+  output_model_name: bipedal1
+  render: False
+  state_dim: 4
+  action_dim: 2
+  action_low: 0
+  action_high: 1
+  replay_memory_size: 100000
+  mini_batch_size: 128
+  gamma: 0.99
+  tau: 0.005
+  learning_rate: 0.0003
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_freq: 1
+  model_save_freq: 100
+  total_it: 0
+  max_reward: 300
+  max_timestep: 1600
+  max_episodes: 3000
+  env_make_params:
+    hardcore: False
